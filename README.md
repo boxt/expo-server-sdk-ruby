@@ -31,11 +31,12 @@ $ gem install exponent-server-sdk
 
 The push client is the preferred way. This hits the latest version of the api.
 
-Optional arguments: `gzip: true`
+Optional arguments: `gzip: true`, `access_token: YOUR_ACCESS_TOKEN`
 
 ```ruby
 client = Exponent::Push::Client.new
 # client = Exponent::Push::Client.new(gzip: true)  # for compressed, faster requests
+# client = Exponent::Push::Client.new(access_token: YOUR_ACCESS_TOKEN)  # for using the extra security access token provided by Expo
 
 messages = [{
   to: "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
