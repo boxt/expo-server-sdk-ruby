@@ -39,6 +39,7 @@ module Exponent
       def initialize(**args)
         @http_client = args[:http_client] || Typhoeus
         @error_builder = ErrorBuilder.new
+        @access_token = args[:access_token]
         # future versions will deprecate this
         @response_handler = args[:response_handler] || ResponseHandler.new
         @gzip             = args[:gzip] == true
@@ -48,7 +49,7 @@ module Exponent
       # @deprecated
       def publish(messages)
         warn '[DEPRECATION] `publish` is deprecated. Please use `send_messages` instead.'
-        @response_handler.handle(push_notifications(messages))
+        response_handler.handle(push_notifications(messages))
       end
 
       # returns response handler that provides access to errors? and other response inspection methods
@@ -73,12 +74,14 @@ module Exponent
 
       private
 
+      attr_reader :http_client, :error_builder, :access_token, :response_handler, :gzip
+
       def push_notifications(messages)
-        @http_client.post(
+        http_client.post(
           push_url,
           body: messages.to_json,
           headers: headers,
-          accept_encoding: @gzip
+          accept_encoding: gzip
         )
       end
 
@@ -87,11 +90,11 @@ module Exponent
       end
 
       def get_receipts(receipt_ids)
-        @http_client.post(
+        http_client.post(
           receipts_url,
           body: { ids: receipt_ids }.to_json,
           headers: headers,
-          accept_encoding: @gzip
+          accept_encoding: gzip
         )
       end
 
@@ -100,11 +103,11 @@ module Exponent
       end
 
       def headers
-        headers = {
-          'Content-Type' => 'application/json',
-          'Accept' => 'application/json'
-        }
-        headers
+        {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': ("Bearer #{access_token}" if access_token)
+        }.compact
       end
     end
 

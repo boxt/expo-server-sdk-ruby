@@ -10,6 +10,8 @@ class ExponentServerSdkTest < Minitest::Test
     @response_mock = MiniTest::Mock.new
     @client        = Exponent::Push::Client.new(http_client: @mock)
     @client_gzip   = Exponent::Push::Client.new(http_client: @mock, gzip: true)
+    @access_token = 'EXPO_ACCESS_TOKEN'
+    @client_authenticated = Exponent::Push::Client.new(http_client: @mock, access_token: @access_token)
   end
 
   def test_send_messages_with_success
@@ -44,6 +46,18 @@ class ExponentServerSdkTest < Minitest::Test
     @mock.expect(:post, @response_mock, gzip_client_args)
 
     response = @client_gzip.send_messages(messages)
+    assert_equal(response.errors?, false)
+
+    @mock.verify
+  end
+
+  def test_send_messages_with_authentication_success
+    @response_mock.expect(:code, 200)
+    @response_mock.expect(:body, success_body.to_json)
+
+    @mock.expect(:post, @response_mock, authenticated_client_args)
+
+    response = @client_authenticated.send_messages(messages)
     assert_equal(response.errors?, false)
 
     @mock.verify
@@ -112,6 +126,27 @@ class ExponentServerSdkTest < Minitest::Test
     @mock.verify
   end
 
+  def test_send_messages_with_authentication_empty_string_response
+    @response_mock.expect(:code, 400)
+    @response_mock.expect(:body, '')
+
+    @mock.expect(:post, @response_mock, authenticated_client_args)
+
+    exception = assert_raises Exponent::Push::UnknownError do
+      handler = @client_authenticated.send_messages(messages)
+      # this first assertion is just stating that errors will be false when
+      # an exception is thrown on the request, not the content of the request
+      # 400/500 level errors are not delivery errors, they are functionality errors
+      assert_equal(handler.response.errors?, false)
+      assert_equal(handler.response.body, {})
+      assert_equal(handler.response.code, 400)
+    end
+
+    assert_match(/Unknown error format/, exception.message)
+
+    @mock.verify
+  end
+
   def test_send_messages_with_gzip_nil_response_body
     @response_mock.expect(:code, 400)
     @response_mock.expect(:body, nil)
@@ -120,6 +155,27 @@ class ExponentServerSdkTest < Minitest::Test
 
     exception = assert_raises Exponent::Push::UnknownError do
       handler = @client_gzip.send_messages(messages)
+      # this first assertion is just stating that errors will be false when
+      # an exception is thrown on the request, not the content of the request
+      # 400/500 level errors are not delivery errors, they are functionality errors
+      assert_equal(handler.response.errors?, false)
+      assert_equal(handler.response.body, {})
+      assert_equal(handler.response.code, 400)
+    end
+
+    assert_match(/Unknown error format/, exception.message)
+
+    @mock.verify
+  end
+
+  def test_send_messages_with_authenticated_nil_response_body
+    @response_mock.expect(:code, 400)
+    @response_mock.expect(:body, nil)
+
+    @mock.expect(:post, @response_mock, authenticated_client_args)
+
+    exception = assert_raises Exponent::Push::UnknownError do
+      handler = @client_authenticated.send_messages(messages)
       # this first assertion is just stating that errors will be false when
       # an exception is thrown on the request, not the content of the request
       # 400/500 level errors are not delivery errors, they are functionality errors
@@ -156,6 +212,21 @@ class ExponentServerSdkTest < Minitest::Test
 
     exception = assert_raises Exponent::Push::UnknownError do
       @client_gzip.send_messages(messages)
+    end
+
+    assert_match(/Unknown error format/, exception.message)
+
+    @mock.verify
+  end
+
+  def test_send_messages_with_authenticated_unknown_error
+    @response_mock.expect(:code, 400)
+    @response_mock.expect(:body, error_body.to_json)
+
+    @mock.expect(:post, @response_mock, authenticated_client_args)
+
+    exception = assert_raises Exponent::Push::UnknownError do
+      @client_authenticated.send_messages(messages)
     end
 
     assert_match(/Unknown error format/, exception.message)
@@ -305,6 +376,19 @@ class ExponentServerSdkTest < Minitest::Test
     @mock.verify
   end
 
+  def test_get_receipts_with_authenticated_success_receipt
+    @response_mock.expect(:code, 200)
+    @response_mock.expect(:body, receipt_success_body.to_json)
+    receipt_ids = [success_receipt]
+
+    @mock.expect(:post, @response_mock, authenticated_receipt_client_args(receipt_ids))
+
+    response_handler = @client_authenticated.verify_deliveries(receipt_ids)
+    assert_match(success_receipt, response_handler.receipt_ids.first)
+
+    @mock.verify
+  end
+
   def test_get_receipts_with_gzip_error_receipt
     @response_mock.expect(:code, 200)
     @response_mock.expect(:body, receipt_error_body.to_json)
@@ -321,6 +405,22 @@ class ExponentServerSdkTest < Minitest::Test
     @mock.verify
   end
 
+  def test_get_receipts_with_authenticated_error_receipt
+    @response_mock.expect(:code, 200)
+    @response_mock.expect(:body, receipt_error_body.to_json)
+    receipt_ids = [error_receipt]
+
+    @mock.expect(:post, @response_mock, authenticated_receipt_client_args(receipt_ids))
+
+    response_handler = @client_authenticated.verify_deliveries(receipt_ids)
+    assert_match(error_receipt, response_handler.receipt_ids.first)
+    assert_equal(true, response_handler.errors?)
+    assert_equal(1, response_handler.errors.count)
+    assert(response_handler.errors.first.instance_of?(Exponent::Push::DeviceNotRegisteredError))
+
+    @mock.verify
+  end
+
   def test_get_receipts_with_gzip_variable_success_receipts
     @response_mock.expect(:code, 200)
     @response_mock.expect(:body, multiple_receipts.to_json)
@@ -329,6 +429,23 @@ class ExponentServerSdkTest < Minitest::Test
     @mock.expect(:post, @response_mock, gzip_receipt_client_args(receipt_ids))
 
     response_handler = @client_gzip.verify_deliveries(receipt_ids)
+    assert_match(error_receipt, response_handler.receipt_ids.first)
+    assert_match(success_receipt, response_handler.receipt_ids.last)
+    assert_equal(true, response_handler.errors?)
+    assert_equal(1, response_handler.errors.count)
+    assert(response_handler.errors.first.instance_of?(Exponent::Push::DeviceNotRegisteredError))
+
+    @mock.verify
+  end
+
+  def test_get_receipts_with_authenticated_variable_success_receipts
+    @response_mock.expect(:code, 200)
+    @response_mock.expect(:body, multiple_receipts.to_json)
+    receipt_ids = [error_receipt, success_receipt]
+
+    @mock.expect(:post, @response_mock, authenticated_receipt_client_args(receipt_ids))
+
+    response_handler = @client_authenticated.verify_deliveries(receipt_ids)
     assert_match(error_receipt, response_handler.receipt_ids.first)
     assert_match(success_receipt, response_handler.receipt_ids.last)
     assert_equal(true, response_handler.errors?)
@@ -362,6 +479,17 @@ class ExponentServerSdkTest < Minitest::Test
     @mock.verify
   end
 
+  def test_publish_authenticated_success
+    @response_mock.expect(:code, 200)
+    @response_mock.expect(:body, success_body.to_json)
+
+    @mock.expect(:post, @response_mock, authenticated_client_args)
+
+    @client_authenticated.publish(messages)
+
+    @mock.verify
+  end
+
   def test_publish_with_gzip
     @response_mock.expect(:code, 200)
     @response_mock.expect(:body, success_body.to_json)
@@ -369,6 +497,17 @@ class ExponentServerSdkTest < Minitest::Test
     @mock.expect(:post, @response_mock, gzip_client_args)
 
     @client_gzip.publish(messages)
+
+    @mock.verify
+  end
+
+  def test_publish_authenticated
+    @response_mock.expect(:code, 200)
+    @response_mock.expect(:body, success_body.to_json)
+
+    @mock.expect(:post, @response_mock, authenticated_client_args)
+
+    @client_authenticated.publish(messages)
 
     @mock.verify
   end
@@ -603,6 +742,21 @@ class ExponentServerSdkTest < Minitest::Test
     ]
   end
 
+  def authenticated_client_args
+    [
+      'https://exp.host/--/api/v2/push/send',
+      {
+        body: messages.to_json,
+        headers: {
+          'Content-Type' => 'application/json',
+          'Accept' => 'application/json',
+          'Authorization' => "Bearer #{@access_token}"
+        },
+        accept_encoding: true
+      }
+    ]
+  end
+
   def receipt_client_args(receipt_ids)
     [
       'https://exp.host/--/api/v2/push/getReceipts',
@@ -625,6 +779,21 @@ class ExponentServerSdkTest < Minitest::Test
         headers: {
           'Content-Type' => 'application/json',
           'Accept' => 'application/json'
+        },
+        accept_encoding: true
+      }
+    ]
+  end
+
+  def authenticated_receipt_client_args(receipt_ids)
+    [
+      'https://exp.host/--/api/v2/push/getReceipts',
+      {
+        body: { ids: receipt_ids }.to_json,
+        headers: {
+          'Content-Type' => 'application/json',
+          'Accept' => 'application/json',
+          'Authorization' => "Bearer #{@access_token}"
         },
         accept_encoding: true
       }
